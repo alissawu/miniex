@@ -8,7 +8,7 @@ Notes
 
 Questions
 
-#### What did the compiler, Make, and CMake each do in this build?
+### What did the compiler, Make, and CMake each do in this build?
 - CMake
   - Parses CMakeLists.txt (targets, settings, compiler/flags)
   - Generates Makefiles and other build system files in build/
@@ -44,12 +44,12 @@ Order of operations:
 
 ---
 
-## Which kit did you select, and why does choosing it explicitly matter?
+### Which kit did you select, and why does choosing it explicitly matter?
 - Apple Clang
 - Choosing explicitly matters bc it locks in a specific compiler/version, aka ensures consistent features and behavior
 
 ---
 
-# Where is the executable located, and why isn’t it in the project root?
+### Where is the executable located, and why isn’t it in the project root?
 - Located in build/ (bc we used out-of-source build)
 - This keeps the source tree clean; build artifacts stay separate from project source files

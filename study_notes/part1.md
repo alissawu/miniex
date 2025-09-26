@@ -1,6 +1,6 @@
 Notes:
 
-Vocab:
+###Vocab:
 side: buy (bid), sell (ask)
 tick: smallest price increment. 
 for this proj will store price as an int number of ticks for simplicity
@@ -14,7 +14,7 @@ cross happens if buy price ≥ best ask OR sell price ≤ best bid
 - immediate trading
 
 EXERCISES:
-***Thought exercise A — simulate by hand
+###Thought exercise A — simulate by hand
 You have an empty book. Tick = 1. Process these events in order. Don’t do any fancy math—just keep track of levels and FIFO.
 add buy id=1 px=10 qty=5 ts=1
 add buy id=2 px=9 qty=4 ts=2
@@ -41,7 +41,6 @@ Post trade book:
 bids: #1 @10x2, #2 @9x4
 asks: #3 @11x2
 best bid = 10, best ask = 11
-
-Thought exercise B — operations we must support (you propose)
+---
+###Thought exercise B — operations we must support (you propose
 Based on the vocabulary, list the minimum operations your order-book must implement to behave like the simulation above. Think in verbs. (e.g., “add ___”, “cancel ___”, “query ___”, etc.)
-
