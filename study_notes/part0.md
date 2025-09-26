@@ -1,4 +1,4 @@
-Notes
+Part 0 Notes
 - CMake: Configure, CMake: Build — steps for compiling and building main.cpp
 - main.cpp builds to hello
 - To run:
