@@ -43,4 +43,5 @@ asks: #3 @11x2
 best bid = 10, best ask = 11
 
 Thought exercise B — operations we must support (you propose)
-Based on the vocabulary, list the minimum operations your order-book must implement to behave like the simulation above. Think in verbs. (e.g., “add ___”, “cancel ___”, “query ___”, etc.
+Based on the vocabulary, list the minimum operations your order-book must implement to behave like the simulation above. Think in verbs. (e.g., “add ___”, “cancel ___”, “query ___”, etc.)
+
