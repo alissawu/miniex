@@ -1,0 +1,35 @@
+Notes
+CMake: Configure, CMake: Build - for the main.cpp to run
+main.cpp builds to hello, to run - ./build/hello 
+
+
+QUESTIONS
+What did the compiler, Make, and CMake each do in this build?
+- CMake: parses targets/settings, generates Makefiles from CMakeLists, records compiler/flags, sets up build directions
+Outputs - build system files in build/
+CMake doesn't compile, it writes instructions
+- Make: uses Makefile and the sources, decides what needs to be rebuilt (timestamps/dependencies), calls the compiler/linker aka invokes tools in order
+performs the link step to produce the final stuff
+Linker (involed by make): takes in the .o files, stitches them together, outputs the executable (build/hello)
+- Compiler: takes in each .cpp, compiles to object file (.o) / machine code
+- OS: executes hello when i run it
+
+Order:
+Me: -> CMakeLists.txt
+Cmake: CMakeLists.txt -> outputs build system files in build/ (Makefile, CMakeCache.txt)
+Make: Makefile + the source files that get compiled (.o files) -> decides what needs rebuilding, invokes tools (ie: shell commands, Linker,, Compiler) in order
+Compiler: .cpp files -> .o files
+Linker: .o files, libraries -> final artifacts (ie: build/hello executable)
+OS: I run hello, OS executes it
+
+What is the target here, and why did we make it?
+- the executable hello
+- we made it bc it's in machine code, to run?
+
+Which kit did you select, and why does choosing it explicitly matter?
+- Apple Clang
+- locks in a specific compiler/version so features r consistent
+
+Where is the executable located, and why isn’t it in the project root?
+- out-of-source build was used, we put it under build/ so source tree is clean
+- we didn't write it so it's in build.

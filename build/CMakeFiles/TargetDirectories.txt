@@ -1,0 +1,3 @@
+/Users/alissawu/miniex/build/CMakeFiles/hello.dir
+/Users/alissawu/miniex/build/CMakeFiles/edit_cache.dir
+/Users/alissawu/miniex/build/CMakeFiles/rebuild_cache.dir
