@@ -1,4 +1,4 @@
-Notes:
+Part 1 Notes:
 
 ### Vocab:
 side: buy (bid), sell (ask)  
@@ -104,12 +104,24 @@ Any operation that consumes k levels / emits t trades can’t be cheaper than Ω
 Fast cancel(id) usually implies you kept a direct handle somewhere.
 Write your targets + one-line rationale for each. Then we’ll choose concrete data structures that can actually hit those targets.
 1. add_limit (non-crossing)
-    - O(L) to traverse and add in the limit at the correct order? (Wrong)
+    - O(logL) + O(1)
+        - locate/create the price level (need ordered index by price + balanced tree lookup = O(logL))
+        - append to FIFO is O(1)
 2. add_limit (crossing)
-    - O(1) bc it's just adding at the top and gets consumed? if it's crossing it's the highest (wrong)
+    - O(logL) + O(k+t)
+    - O(log L) to place/find the levels, then we consume k levels and emit t trades
 3. add_market(qty)
-    - O(k) because you consume levels until the quantity is matched
+    - O(k+t)
+    - Market order walks best-price outward, touching k levels and emitting t trades
+    - Always start at the extreme, which we can read in O(1)
 4. cancel(id)
-    - O(1) for deletion? I'm not sure what structure this would be
+    - O(1) 
+    - need direct handle from id -> side, price level handle, order handle to erase w/o search
+    - per-level container must support O(1) erase at iterator and preserve FIFO (linked list?)
 5. best_bid() / best_ask()
-    - O(1) bc it's at the top right?
+    - O(1) 
+    - either maintain pointer to extreme, or ordered map whose begin()/rbegin() is O(1) to min/max price
+Design implications:
+- side index (price->level): A balanced tree / skip list / ordered map for O(log L) lookups and O(1) extreme access
+- Per-level queue: FIFO with O(1) push-back, O(1) pop-front, O(1) erase at iterator for cancels -> linked list
+- ID index: hashmap from order_id to a handle to make cancel O(1)
