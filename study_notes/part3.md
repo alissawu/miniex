@@ -12,7 +12,7 @@ Design the fields (names + types) for:
     - Invariant to encode: trade price = maker’s price.
 For each, write a bullet list of fields you’ll include and one sentence on why each field exists.
 1. Order
-- id (uint64): each order id must be unique, good for indexing and access, uniquely identifies
+- order_id (uint64): each order id must be unique, good for indexing and access, uniquely identifies
 - side (enum): ask | bid, keeps track of whether it's an ask or a bid
     - feedback: strings are slow/error prone, so use 2-value domain. enums are cheap, typechecked, compare in O(1)
 - px_ticks (int > 0): price 
@@ -37,6 +37,7 @@ Propose method names + inputs + outputs (no bodies). Use our earlier decisions:
     Inputs: side, id, price (ticks), qty, ts.
     Output: a sequence of Trades (possibly empty).
     Behavior: if crossing, emits trades; leftover qty (if any) rests.
+add_limit()
 - add_market(...)
     Inputs: side, qty, ts.
     Output: sequence of Trades.
