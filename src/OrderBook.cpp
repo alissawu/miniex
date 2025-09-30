@@ -58,6 +58,25 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
         // Non-crossing: no trades to emit (out.trades stays empty)
         return out;
     }
-
+    // others aren't implemented yet
     return out; // order_id==0 means “not accepted” in this minimal step
 }
+
+bool OrderBook::cancel(uint64_t order_id) {
+    auto& st = S();
+    auto it = st.id_to_order.find(order_id);
+    if (it == st.id_to_order.end()) return false;
+
+    const ActiveOrder& ao = it->second;
+
+    auto& side_map = (ao.side == Side::Buy) ? st.bids : st.asks;
+    auto pit = side_map.find(ao.px_ticks);
+    if (pit != side_map.end()) {
+        pit->second -= ao.remaining_qty;
+        if (pit->second <= 0) side_map.erase(pit);  // no ghosts
+    }
+
+    st.id_to_order.erase(it);
+    return true;
+}
+
