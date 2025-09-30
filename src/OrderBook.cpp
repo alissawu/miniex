@@ -35,12 +35,8 @@ namespace {
 
 AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, uint64_t ts) {
     AddLimitResult out{0, {}}; // order_id = 0, trades = {}. default that reprsents failure
-
-    // Non-negativity. No neg qty, no neg price
-    if (qty <= 0 || px_ticks < 0) return out;
-
-    // Access the single BookState (internal memory)
-    auto& st = S();
+    if (qty <= 0 || px_ticks < 0) return out; // invalid trades
+    auto& st = S(); // Access the single BookState (internal memory)
 
     // T1 - non-crossing BUY inserts
     if (side == Side::Buy) {
@@ -48,7 +44,6 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
         out.order_id = id;
         // Update the aggregate at this bid price
         st.bids[px_ticks] += qty;
-
         // Record the order so cancel() can find & remove it later
         st.id_to_order.emplace(id, ActiveOrder{ // emplace - constructs value in place (no temp obj needed unlike insert), doesn't overwrite (unlike operator[](key))
             Side::Buy,      // side
@@ -56,11 +51,73 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
             qty,            // remaining_qty
             ts              // timestamp (for FIFO)
         });
-
         // Non-crossing: no trades to emit (out.trades stays empty)
         return out;
     }
-    // others aren't implemented yet
+    
+    // T2 - Sell, match against one price level, one resting order at that level
+    if (side == Side::Sell) {
+        // assign order id to incoming sell (taker)
+        const uint64_t taker_id = st.next_id++;
+        out.order_id = taker_id;
+        int64_t remaining = qty;
+        // while still have qty and crossable bid exists, cross
+        while (remaining > 0 && !st.bids.empty()) {
+            // best bid = highest price in bids
+            auto best_bid_it = std::prev(st.bids.end());
+            const int64_t best_bid_px = best_bid_it->first;
+            if (best_bid_px < px_ticks) break; // no longer crossing
+            // find a maker order at this price w/earliest ts (FIFO stand-in)
+            // (Temporary: linear scan of id_to_order; OK for T2 where 1 order exists.)
+            uint64_t maker_id = 0;
+            uint64_t maker_ts = UINT64_MAX;
+            // oid, ao iterates over st.id_to_order
+            for (const auto& [oid, ao] : st.id_to_order) {
+                if (ao.side == Side::Buy && ao.px_ticks == best_bid_px && ao.remaining_qty > 0) {
+                    if (ao.ts < maker_ts) { maker_ts = ao.ts; maker_id = oid; }
+                }
+            }
+            if (maker_id == 0) {
+                // No concrete maker found at this level (shouldn't happen if aggregate > 0).
+                break; // avoid infinite loop.
+            }
+            // Compute fill qty
+            auto& maker = st.id_to_order[maker_id];
+            const int64_t fill = (remaining < maker.remaining_qty) ? remaining : maker.remaining_qty;
+            
+            // Emit/do trade at maker's price
+            out.trades.push_back(Trade{
+                maker_id,/*maker_order_id=*/
+                taker_id,/*taker_order_id=*/
+                best_bid_px,/*px_ticks=, maker price*/ 
+                fill,/*qty=*/
+                ts/*ts= use incoming order's ts for now*/              
+            });
+            // apply fills: reduce maker, reduce level aggregate, reduce taker remaining
+            maker.remaining_qty-= fill;
+            best_bid_it->second-= fill;
+            remaining-= fill;
+
+            // if maker order is done, erase it
+            if (maker.remaining_qty == 0) {
+                st.id_to_order.erase(maker_id);
+            }
+            // if price level aggregate = 0 / empty, erase the level
+            if (best_bid_it->second == 0) {
+                st.bids.erase(best_bid_it);
+            }
+        }
+
+        // if any incoming sell remains, didn't cross (ie limit order not fulfilled), rest on the ask side
+        if (remaining > 0) {
+            st.asks[px_ticks] += remaining;
+            st.id_to_order.emplace(taker_id, ActiveOrder{Side::Sell, px_ticks, remaining, ts});
+        } else {
+            // fully filled on entry, taker never rests; nothing to record in id_to_order
+        }
+        return out;
+
+    }
     return out; // order_id==0 means “not accepted” in this minimal step
 }
 
