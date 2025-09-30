@@ -3,6 +3,8 @@
 #include "OrderBook.hpp"   // btw these are manually typed comments
 #include <map>             // ordered price -> agg_qty
 #include <unordered_map>   // id -> ActiveOrder
+#include <optional>
+
 
 // namespace - way to group names together to avoid collisions w name from other code
 namespace {
@@ -62,21 +64,56 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
     return out; // order_id==0 means “not accepted” in this minimal step
 }
 
+
 bool OrderBook::cancel(uint64_t order_id) {
     auto& st = S();
-    auto it = st.id_to_order.find(order_id);
-    if (it == st.id_to_order.end()) return false;
+    // Look up order_id in id_to_order; if missing -> false
+    // .find() returns an iterator to that element with that key
+    auto iter = st.id_to_order.find(order_id);
+    // .find() returns end() if not found
+    if (iter == st.id_to_order.end()) return false;
 
-    const ActiveOrder& ao = it->second;
+    // -> dereferences iter to get the element, to read fields w/o copying 
+    const ActiveOrder& ao = iter->second; // second = VALUE IN KEY, VALUE PAIR (ActiveOrder)
 
+    // reference st.bids or st.asks (price->aggregate map)
     auto& side_map = (ao.side == Side::Buy) ? st.bids : st.asks;
-    auto pit = side_map.find(ao.px_ticks);
-    if (pit != side_map.end()) {
-        pit->second -= ao.remaining_qty;
-        if (pit->second <= 0) side_map.erase(pit);  // no ghosts
+    // price iterator
+    auto px_iter = side_map.find(ao.px_ticks);
+    // if order was buy, we subtract from bids
+    // if order was sell, we subtract from asks
+    // if level exists, subtract from aggregate, px_iter -> second is the aggregate quantity after subtraction
+    if (px_iter != side_map.end()) {
+        px_iter->second -= ao.remaining_qty;
+        if (px_iter->second <= 0) side_map.erase(px_iter);  // no ghosts
     }
-
-    st.id_to_order.erase(it);
+    st.id_to_order.erase(iter);
     return true;
 }
 
+// fn is member of OrderBook, might return TopofBook or null
+std::optional<TopOfBook> OrderBook::best_bid() const {
+    const auto& st = S();                       // auto = deduce the type
+    if (st.bids.empty()) return std::nullopt;
+    auto iter = std::prev(st.bids.end());         // highest price
+    return TopOfBook{iter->first, iter->second};    // move the pointer
+}
+std::optional<TopOfBook> OrderBook::best_ask() const {
+    const auto& st = S();
+    if (st.asks.empty()) return std::nullopt;
+    auto iter = st.asks.begin();                  // lowest price
+    return TopOfBook{iter->first, iter->second};
+}
+// get level size, return 0 if missing
+int64_t OrderBook::depth_at(Side side, int64_t px_ticks) const {
+    const auto& st = S();
+    const auto& side_map = (side == Side::Buy) ? st.bids : st.asks;
+    // find returns an iterator to the key if found; otherwise side_map.end()
+    auto iter = side_map.find(px_ticks);
+    // not found, return 0; else return the aggregate qty. second is the value
+    return (iter == side_map.end()) ? 0 : iter->second;
+}
+
+
+
+Ok i've renamed it to iter and pit to px_iter so ik what it means
