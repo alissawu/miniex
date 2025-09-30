@@ -116,7 +116,7 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
     if (qty <= 0 || px_ticks < 0) return out; // invalid trades
     auto& st = S(); // Access the single BookState (internal memory)
 
-    // T1 + DS - non-crossing BUY insert -> create node in a Level
+    // non-crossing BUY insert -> create node in a Level
     if (side == Side::Buy) {
         const uint64_t id = st.next_id++;  //engine generated ID
         out.order_id = id;
@@ -137,7 +137,7 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
         return out;
     }
     
-    // T2 - Sell, match against one price level, one resting order at that level
+    // CROSSING sell
     if (side == Side::Sell) {
         // assign order id to incoming sell (taker)
         const uint64_t taker_id = st.next_id++;
@@ -148,94 +148,38 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
             // best bid = highest price in bids
             auto best_bid_it = std::prev(st.bids.end());
             const int64_t best_bid_px = best_bid_it->first;
+            Level& level = best_bid_it->second;
+
             if (best_bid_px < px_ticks) break; // no longer crossing
-            // find a maker order at this price w/earliest ts (FIFO stand-in)
-            // (Temporary: linear scan of id_to_order; OK for T2 where 1 order exists.)
-            uint64_t maker_id = 0;
-            uint64_t maker_ts = UINT64_MAX;
-            // oid, ao iterates over st.id_to_order
-            for (const auto& [oid, ao] : st.id_to_order) {
-                if (ao.side == Side::Buy && ao.px_ticks == best_bid_px && ao.remaining_qty > 0) {
-                    if (ao.ts < maker_ts) { maker_ts = ao.ts; maker_id = oid; }
-                }
-            }
-            if (maker_id == 0) {
-                // No concrete maker found at this level (shouldn't happen if aggregate > 0).
-                break; // avoid infinite loop.
-            }
-            // Compute fill qty
-            auto& maker = st.id_to_order[maker_id];
-            const int64_t fill = (remaining < maker.remaining_qty) ? remaining : maker.remaining_qty;
-            
-            // Emit/do trade at maker's price
+
+            auto maker_it = level.queue.begin(); // starting at the best bid
+            const uint64_t maker_id = maker_it->order_id;
+            // amt to fill
+            const int64_t fill = std::min<int64_t>(remaining, maker_it->remaining_qty);
+            // emit trade at the maker's (resting best bid) price
             out.trades.push_back(Trade{
                 maker_id,/*maker_order_id=*/
                 taker_id,/*taker_order_id=*/
-                best_bid_px,/*px_ticks=, maker price*/ 
+                best_bid_px,/*px_ticks=*/
                 fill,/*qty=*/
-                ts/*ts= use incoming order's ts for now*/              
+                ts/*ts=*/
             });
-            // apply fills: reduce maker, reduce level aggregate, reduce taker remaining
-            maker.remaining_qty-= fill;
-            best_bid_it->second-= fill;
-            remaining-= fill;
-
-            // if maker order is done, erase it
-            if (maker.remaining_qty == 0) {
-                st.id_to_order.erase(maker_id);
+            // apply the effects of the fill
+            maker_it->remaining_qty -= fill;
+            level.aggregate_qty     -= fill;
+            remaining               -= fill;
+            // if maker completed, erase node and its handle (O(1))
+            if (maker_it->remaining_qty == 0) {
+                st.id_to_handle.erase(maker_id);
+                level.queue.erase(maker_it);
             }
-            // if price level aggregate = 0 / empty, erase the level
-            if (best_bid_it->second == 0) {
+            // if the price level is now empty, erase it 
+            if (level.aggregate_qty == 0) {
                 st.bids.erase(best_bid_it);
             }
         }
-
-        // if any incoming sell remains, didn't cross (ie limit order not fulfilled), rest on the ask side
-        if (remaining > 0) {
-            st.asks[px_ticks] += remaining;
-            st.id_to_order.emplace(taker_id, ActiveOrder{Side::Sell, px_ticks, remaining, ts});
-        } else {
-            // fully filled on entry, taker never rests; nothing to record in id_to_order
-        }
-        return out;
-
     }
-    return out; // order_id==0 means “not accepted” in this minimal step
-}
-
-
-bool OrderBook::cancel(uint64_t order_id) {
-    auto& st = S();
-    // Look up order_id in id_to_handle; if missing -> false
-    auto hit = st.id_to_handle.find(order_id);
-    if (hit == st.id_to_handle.end()) return false;
-    
-    const Handle h = hit->second; // second references the level
-    if(h.side == Side::Buy){
-        Level& level = h.level_it->second;
-        // subtract remaining qty from aggregate
-        const int64_t removed = h.order_it->remaining_qty;
-        level.aggregate_qty -= removed;
-        // erase order node in O(1)
-        level.queue.erase(h.order_it);
-        // if level empty, erase price level
-        if(level.aggregate_qty == 0){
-            st.bids.erase(h.level_it);
-        }
-        // remove handle 
-        st.id_to_handle.erase(hit);
-        return true; 
-    } else {
-        Level& level = h.level_it->second;
-        const int64_t removed = h.order_it->remaining_qty;
-        level.aggregate_qty -= removed;
-        level.queue.erase(h.order_it);
-        if(level.aggregate_qty == 0){
-            st.asks.erase(h.level_it);
-        }
-    }
-
-    return true;
+    return out;
 }
 
 // fn is member of OrderBook, might return TopofBook or null. const function doesn't modify object
