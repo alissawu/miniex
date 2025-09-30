@@ -1,5 +1,6 @@
 Part 2 Notes:
 
+### O-Notatation Targets
 A. Side index (price -> level)
 Ordered associative container keyed by price
 std::map<int, Level> RB-tree
@@ -28,22 +29,21 @@ anything else for later, like arrival counters and stuff
 E. Best of book in O(1)
 Cached iterators: keep best_bid_it / best_ask_it updated on inserts/erases
 
-TASK / PART 2:
+### Define Handle and Level
 Define your Handle and Level on paper (bullet list, not code):
-Handle fields — list the exact fields you will store for O(1) cancel.
-Name the side field and why you need it.
-Name the two “iterators/pointers” you’ll hold (to what, exactly?).
-Level fields — list the minimal state per price level.
-What aggregate(s) do you keep and why?
-What container holds the orders, and what properties does it guarantee you?
-Top-of-book policy — which of the two strategies will you use for O(1) best bid/ask (map extremes or cached iters), and why?
-Post those three bullet lists. I’ll critique them. Then we’ll move to Part 3: public interfaces (headers only) that embody these decisions and your invariants.
+- Handle fields — list the exact fields you will store for O(1) cancel.
+- Name the side field and why you need it.
+- Name the two “iterators/pointers” you’ll hold (to what, exactly?).
+- Level fields — list the minimal state per price level.
+- What aggregate(s) do you keep and why?
+- What container holds the orders, and what properties does it guarantee you?
+- Top-of-book policy — which of the two strategies will you use for O(1) best bid/ask (map extremes or cached iters), and why?
 
 Handle fields:
 To cancel an order in O(1), we need to know what side it's on, which price level node it lives in, and which order node in that level.
-side: bid | ask
-price-level iterator: iterator/pointer to the price level node inside the side's ordered index (interator into map<int, Level>)
-order iterator: iterator/pointer to the order node inside that level's FIFO list (node in a linked list)
+- side: bid | ask
+- price-level iterator: iterator/pointer to the price level node inside the side's ordered index (interator into map<int, Level>)
+- order iterator: iterator/pointer to the order node inside that level's FIFO list (node in a linked list)
 
 Level fields:
 - The minimal state per price level should have at least one order in it, otherwise it shouldn't exist. It holds orders at a price and supports FIFO / O(1) cancel
