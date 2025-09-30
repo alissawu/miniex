@@ -21,10 +21,12 @@ avoids double inclusion problem (same header gets pulled in multiple times)
 // type safety and exhaustiveness; enum class keeps values scoped and comparisons cheap
 enum class Side { Buy, Sell }; // must write Side::Buy; no implicit int cast
 
-// top of the book - best price and total resting size at that price
+/**
+ * Top of the book — px_ticks: best price, agg_qty: total resting size at that price
+ */
 struct TopOfBook{
-    int64_t px_ticks;  // price in integer ticks (no floats)
-    int64_t agg_qty;   // total resting quantity at that price
+    int64_t px_ticks;  /**< price in integer ticks (no floats) */
+    int64_t agg_qty;   /**< total resting quantity at that price */
 };
 
 // the engine emits events when matching happens

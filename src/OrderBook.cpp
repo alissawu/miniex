@@ -7,51 +7,109 @@
 #include <optional>
 
 
-// namespace - way to group names together to avoid collisions w name from other code
 namespace {
-    // minimal info we need ab single resting order to cancel it correctly
+
+    /**
+     * @brief Minimal per-order metadata tracked while an order rests.
+     *
+     * Used to (a) identify the side/price of the order and
+     * (b) compute how much to remove from a level on cancel,
+     * (c) preserve FIFO via the original submission timestamp.
+     */
     struct ActiveOrder {
-        Side     side;
-        int64_t  px_ticks;
-        int64_t  remaining_qty;    // how much to subtract from aggregate on cancel
-        uint64_t ts;               // needed for FIFO
+        Side     side;         ///< Side::Buy or Side::Sell
+        int64_t  px_ticks;     ///< Price of the order (in ticks)
+        int64_t  remaining_qty;///< Unfilled quantity; removed from level on cancel
+        uint64_t ts;           ///< Submission timestamp for price-time priority (FIFO)
     };
 
-    // One resting order at a price level
+    /**
+     * @brief A single resting order node within a price level's FIFO queue.
+     *
+     */
     struct OrderNode {
-        uint64_t order_id;
-        int64_t remaining_qty;
-        uint64_t ts; 
-    };
-    // Price level: aggregate, FIFO queue of OrderNode
-    struct Level {
-        int64_t aggregate_qty = 0;
-        // minimal FIFO container; std::list gives stable iterators and O(1) erase at iterator
-        std::list<OrderNode> queue;
-    };
-    // handle for O(1) cancel. holds "exact address" of an order
-    struct Handle {
-        Side side;
-        // iterator to price level in map
-        std::map<int64_t, Level>::iterator level_it;
-        // iterator to order node in price level's queue
-        std::list<OrderNode>::iterator order_it;
+        uint64_t order_id;     ///< Engine-assigned unique order id
+        int64_t  remaining_qty;///< Unfilled quantity for this node
+        uint64_t ts;           ///< Submission timestamp (earlier = higher FIFO priority)
     };
 
-    // BookState is the whole book, prices are keys inside bids/asks maps
-    struct BookState {
-        std::map<int64_t, Level>                bids;        // price -> Level (aggregate + FIFO)
-        std::map<int64_t, int64_t>              asks;        // price -> aggregate
-        std::unordered_map<uint64_t, Handle>    id_to_handle; // id_to_handle, jump straight to the node for O(1) cancel
-        uint64_t next_id = 1; // engine-generated IDs. next_id +=1
+    /**
+     * @brief One price level on one side of the book.
+     *
+     * Maintains:
+     *  - @c aggregate_qty : sum of all node quantities at this price.
+     *  - @c queue         : FIFO of resting orders at this price, oldest at front.
+     *
+     * @note We use @c std::list for stable iterators and O(1) erase given an iterator.
+     *       This property enables true O(1) cancel when coupled with stored iterators.
+     */
+    struct Level {
+        int64_t aggregate_qty = 0;       ///< Sum of remaining_qty for all nodes at this price
+        std::list<OrderNode> queue;      ///< FIFO queue of resting orders (price-time priority)
     };
-    // if we returned by value, we'd get a copy each time, edits don't persist
-    // returning reference gives direct access. we mutate the real state
-    BookState& S() { // & = reference type
-        static BookState s; // constructed once on first call
-        return s;           // always return this 
-    } 
-}
+
+    /**
+     * @brief O(1) locator for a specific resting order.
+     *
+     * Stores the exact iterators needed to:
+     *  - locate the price level in the side map, and
+     *  - locate the order node inside that level's FIFO queue.
+     *
+     * With this handle, cancellation avoids both map lookup and queue scans.
+     *
+     * @warning Iterators are invalidated if the referenced element is erased.
+     *          Code that erases must ensure handles to that element are not used afterward.
+     */
+    struct Handle {
+        Side side;                                      ///< Side where the order rests
+        std::map<int64_t, Level>::iterator level_it;    ///< Iterator to (price -> Level) entry
+        std::list<OrderNode>::iterator      order_it;   ///< Iterator to the specific OrderNode in the Level queue
+    };
+
+    /**
+     * @brief Entire in-memory state of the order book.
+     *
+     * Layout:
+     *  - @c bids : price -> Level, ordered ascending (highest price is @c std::prev(bids.end()))
+     *  - @c asks : price -> aggregate quantity (Level elided until DS step finishes)
+     *  - @c id_to_handle : order_id -> Handle for O(1) cancel
+     *  - @c next_id : monotonic id generator for new submissions
+     *
+     * @invariant For every price present in @c bids, @c Level::aggregate_qty equals
+     *            the sum of @c remaining_qty over all nodes in @c Level::queue.
+     *
+     * @complexity
+     *  - Level lookup/creation: O(log L) where L is number of price levels on that side.
+     *  - Cancel by id: O(1) (amortized), given valid Handle iterators.
+     *
+     * @iterator_validity
+     *  - @c std::map iterators remain valid across insert/erase of different keys
+     *    (only the erased element’s iterator is invalidated).
+     *  - @c std::list iterators remain valid across insert/erase elsewhere; erasing the
+     *    node pointed to by @c order_it invalidates that iterator only.
+     */
+    struct BookState {
+        std::map<int64_t, Level>             bids;          ///< Bid side: price -> Level (aggregate + FIFO)
+        std::map<int64_t, int64_t>           asks;          ///< Ask side: price -> aggregate (FIFO added in later DS step)
+        std::unordered_map<uint64_t, Handle> id_to_handle;  ///< O(1) jump to a resting order’s exact location
+        uint64_t                             next_id = 1;   ///< Next engine-generated order id
+    };
+
+    /**
+     * @brief Singleton accessor for the process-local book state.
+     *
+     * @return Reference to the single @c BookState instance.
+     *
+     * @note Returning by reference avoids copying and ensures mutations persist.
+     *       The static instance is constructed on first call (thread-unsafe lazy init).
+     */
+    BookState& S() {
+        static BookState s;   // constructed once on first use
+        return s;             // subsequent calls return the same instance
+    }
+
+} // end anonymous namespace
+
 
 AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, uint64_t ts) {
     AddLimitResult out{0, {}}; // order_id = 0, trades = {}. default that reprsents failure
@@ -66,19 +124,16 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
         // If p_ticks exists: returns an iterator to existing price->Level pair, sets inserted = false
         // if not: constructs new Level{} at that key, returns iterator to it, sets inserted=true
         auto [level_it, inserted] = st.bids.try_emplace(px_ticks, Level{});
-        Level& level = level_it -> second
-
-
-        // Update the aggregate at this bid price
-        st.bids[px_ticks] += qty;
-        // Record the order so cancel() can find & remove it later
-        st.id_to_order.emplace(id, ActiveOrder{ // emplace - constructs value in place (no temp obj needed unlike insert), doesn't overwrite (unlike operator[](key))
-            Side::Buy,      // side
-            px_ticks,       // price level
-            qty,            // remaining_qty
-            ts              // timestamp (for FIFO)
-        });
-        // Non-crossing: no trades to emit (out.trades stays empty)
+        // grab reference to Level object at that price
+        Level& level = level_it -> second; // level is a reference to second
+        // append to FIFO
+        level.queue.push_back(OrderNode{ id, qty, ts });
+        auto order_it = std::prev(level.queue.end());
+        // update aggregate
+        level.aggregate_qty += qty;
+        // record handle for O(1) cancel. id is order id
+        st.id_to_handle.emplace(id, Handle{ Side::Buy, level_it, order_it });
+        // no trades (non-crossing)
         return out;
     }
     
@@ -151,37 +206,48 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
 
 bool OrderBook::cancel(uint64_t order_id) {
     auto& st = S();
-    // Look up order_id in id_to_order; if missing -> false
-    // .find() returns an iterator to that element with that key
-    auto iter = st.id_to_order.find(order_id);
-    // .find() returns end() if not found
-    if (iter == st.id_to_order.end()) return false;
-
-    // -> dereferences iter to get the element, to read fields w/o copying 
-    const ActiveOrder& ao = iter->second; // second = VALUE IN KEY, VALUE PAIR (ActiveOrder)
-
-    // reference st.bids or st.asks (price->aggregate map)
-    auto& side_map = (ao.side == Side::Buy) ? st.bids : st.asks;
-    // price iterator
-    auto px_iter = side_map.find(ao.px_ticks);
-    // if order was buy, we subtract from bids
-    // if order was sell, we subtract from asks
-    // if level exists, subtract from aggregate, px_iter -> second is the aggregate quantity after subtraction
-    if (px_iter != side_map.end()) {
-        px_iter->second -= ao.remaining_qty;
-        if (px_iter->second <= 0) side_map.erase(px_iter);  // no ghosts
+    // Look up order_id in id_to_handle; if missing -> false
+    auto hit = st.id_to_handle.find(order_id);
+    if (hit == st.id_to_handle.end()) return false;
+    
+    const Handle h = hit->second; // second references the level
+    if(h.side == Side::Buy){
+        Level& level = h.level_it->second;
+        // subtract remaining qty from aggregate
+        const int64_t removed = h.order_it->remaining_qty;
+        level.aggregate_qty -= removed;
+        // erase order node in O(1)
+        level.queue.erase(h.order_it);
+        // if level empty, erase price level
+        if(level.aggregate_qty == 0){
+            st.bids.erase(h.level_it);
+        }
+        // remove handle 
+        st.id_to_handle.erase(hit);
+        return true; 
+    } else {
+        Level& level = h.level_it->second;
+        const int64_t removed = h.order_it->remaining_qty;
+        level.aggregate_qty -= removed;
+        level.queue.erase(h.order_it);
+        if(level.aggregate_qty == 0){
+            st.asks.erase(h.level_it);
+        }
     }
-    st.id_to_order.erase(iter);
+
     return true;
 }
 
-// fn is member of OrderBook, might return TopofBook or null
+// fn is member of OrderBook, might return TopofBook or null. const function doesn't modify object
 std::optional<TopOfBook> OrderBook::best_bid() const {
     const auto& st = S();                       // auto = deduce the type
     if (st.bids.empty()) return std::nullopt;
+    // std.bids.end() is iterator one past last elem in map. std::prev gives the last element in the map.
     auto iter = std::prev(st.bids.end());         // highest price
-    return TopOfBook{iter->first, iter->second};    // move the pointer
+    const Level& level = iter->second;   // level references second, the Level object
+    return TopOfBook{iter->first, level.aggregate_qty };  // iter -> key (price)
 }
+
 std::optional<TopOfBook> OrderBook::best_ask() const {
     const auto& st = S();
     if (st.asks.empty()) return std::nullopt;
@@ -191,11 +257,14 @@ std::optional<TopOfBook> OrderBook::best_ask() const {
 // get level size, return 0 if missing
 int64_t OrderBook::depth_at(Side side, int64_t px_ticks) const {
     const auto& st = S();
-    const auto& side_map = (side == Side::Buy) ? st.bids : st.asks;
-    // find returns an iterator to the key if found; otherwise side_map.end()
-    auto iter = side_map.find(px_ticks);
-    // not found, return 0; else return the aggregate qty. second is the value
-    return (iter == side_map.end()) ? 0 : iter->second;
+    if (side == Side::Buy){
+        auto it = st.bids.find(px_ticks);
+        if(it == st.bids.end()) return 0;
+        return it->second.aggregate_qty;
+    } else {
+        auto it = st.asks.find(px_ticks);
+        return (it == st.asks.end()) ? 0 : it->second;
+    }
 }
 
 
