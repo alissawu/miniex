@@ -1,5 +1,6 @@
 {
     "files.associations": {
+        "*.hpp": "cpp",
         "*.ejs": "html",
         "iostream": "cpp",
         "__bit_reference": "cpp",

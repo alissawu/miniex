@@ -115,5 +115,3 @@ int64_t OrderBook::depth_at(Side side, int64_t px_ticks) const {
 }
 
 
-
-Ok i've renamed it to iter and pit to px_iter so ik what it means

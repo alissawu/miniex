@@ -1,0 +1,4 @@
+/Users/alissawu/miniex/build/CMakeFiles/miniex_core.dir
+/Users/alissawu/miniex/build/CMakeFiles/tests_basic.dir
+/Users/alissawu/miniex/build/CMakeFiles/edit_cache.dir
+/Users/alissawu/miniex/build/CMakeFiles/rebuild_cache.dir

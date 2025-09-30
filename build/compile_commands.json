@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/Users/alissawu/miniex/build",
+  "command": "/usr/bin/clang++  -I/Users/alissawu/miniex/include -g -std=gnu++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk -o CMakeFiles/miniex_core.dir/src/OrderBook.cpp.o -c /Users/alissawu/miniex/src/OrderBook.cpp",
+  "file": "/Users/alissawu/miniex/src/OrderBook.cpp",
+  "output": "CMakeFiles/miniex_core.dir/src/OrderBook.cpp.o"
+},
+{
+  "directory": "/Users/alissawu/miniex/build",
+  "command": "/usr/bin/clang++  -I/Users/alissawu/miniex/include -g -std=gnu++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk -o CMakeFiles/tests_basic.dir/tests/t_orderbook.cpp.o -c /Users/alissawu/miniex/tests/t_orderbook.cpp",
+  "file": "/Users/alissawu/miniex/tests/t_orderbook.cpp",
+  "output": "CMakeFiles/tests_basic.dir/tests/t_orderbook.cpp.o"
+}
+]

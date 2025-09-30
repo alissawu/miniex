@@ -26,6 +26,3 @@ add_executable(tests_basic
     tests/t_orderbook.cpp
 )
 target_link_libraries(tests_basic PRIVATE miniex_core)
-target_include_directories(tests_basic PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)

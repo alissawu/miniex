@@ -1,0 +1,2 @@
+/usr/bin/ar qc libminiex_core.a CMakeFiles/miniex_core.dir/src/OrderBook.cpp.o
+/usr/bin/ranlib libminiex_core.a
