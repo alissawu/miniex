@@ -1,5 +1,8 @@
 // creating the contract the tests & any app will rely on
 // types and method signatures
+// no maps/lists/handles here - encapsulation - keep implementation choices private to change data structures w/o breaking users or recompiling 
+// tests call API, internals can solve. data struct can be restructured
+
 
 // C++ headers - avoid double inclusion, declare only what is needed
 
@@ -45,3 +48,33 @@ struct AddMarketResult {
     uint64_t           taker_order_id; // ephemeral / transient / doesn't "rest"
     std::vector<Trade> trades;         // may be empty
 };
+
+/* 
+ * public API the tests will call  
+ * defines the functions/etc from part1.md Part B  
+ * documentation link: part1.md#thought-exercise-b--operations-we-must-support-you-propose
+ */
+class OrderBook {
+public:
+    // order_id is engine generated for uniqueness, avoids client races
+    // engine owns lifecycle, can attribute trades determinstically etc 
+    // it makes logical sense that the client does not generate their own ids
+    // can still return id so caller can cancel later.
+    AddLimitResult  add_limit (Side side, int64_t px_ticks, int64_t qty, uint64_t ts);
+    // no px_ticks bc has no price limit - can trade across multiple price levels, no single order price to pass in
+    AddMarketResult add_market(Side side, int64_t qty, uint64_t ts);
+
+    bool cancel(uint64_t order_id);
+
+    //
+    std::optional<TopOfBook> best_bid() const;
+    std::optional<TopOfBook> best_ask() const;
+
+    int64_t depth_at(Side side, int64_t px_ticks) const;
+
+private:
+    // Intentionally opaque: no internals leak into the header.
+    // (We’ll define data structures in OrderBook.cpp.)
+};
+
+//

@@ -1,4 +1,31 @@
 cmake_minimum_required(VERSION 3.20)
-project(miniex
-LANGUAGES CXX) # specify language is c++
-add_executable(hello main.cpp)
+
+# 1) name project, define language cpp
+project(miniex LANGUAGES CXX)
+
+# 2) tell compiler and IntelliSense use C++20
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# export compile_commands.json for IntelliSense
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# 3) Core engine library 
+#    - compiles src/OrderBook.cpp
+#    - PUBLIC include dir makes headers under include/ visible to users/tests
+add_library(miniex_core
+    src/OrderBook.cpp
+)
+target_include_directories(miniex_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# 4) test executable for T1
+# args: target, sources
+add_executable(tests_basic
+    tests/t_orderbook.cpp
+)
+target_link_libraries(tests_basic PRIVATE miniex_core)
+target_include_directories(tests_basic PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
