@@ -14,22 +14,50 @@ namespace {
         uint64_t ts;               // needed for FIFO
     };
 
-    // engine internal memory
     // BookState is the whole book, prices are keys inside bids/asks maps
     struct BookState {
         std::map<int64_t, int64_t>                 bids;        // price → aggregate qty
         std::map<int64_t, int64_t>                 asks;        // these hold the aggregates per side
-        // mapping type, id -> order, find order w/o searching the book
+        // map order id -> active order
         std::unordered_map<uint64_t, ActiveOrder>  id_to_order; 
         // each time we accept new resting order, we hand out fresh order_id and increment
         uint64_t next_id = 1; // engine-generated IDs
     };
-
-    // returns reference to this s BookState instance. & = reference type
     // if we returned by value, we'd get a copy each time, edits don't persist
     // returning reference gives direct access. we mutate the real state
-    BookState& S() {
+    BookState& S() { // & = reference type
         static BookState s; // constructed once on first call
         return s;           // always return this 
     } 
+}
+
+AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, uint64_t ts) {
+    AddLimitResult out{0, {}}; // order_id = 0, trades = {}. default that reprsents failure
+
+    // Non-negativity. No neg qty, no neg price
+    if (qty <= 0 || px_ticks < 0) return out;
+
+    // Access the single BookState (internal memory)
+    auto& st = S();
+
+    // T1 - non-crossing BUY inserts
+    if (side == Side::Buy) {
+        const uint64_t id = st.next_id++;  //engine generated ID
+        out.order_id = id;
+        // Update the aggregate at this bid price
+        st.bids[px_ticks] += qty;
+
+        // Record the order so cancel() can find & remove it later
+        st.id_to_order.emplace(id, ActiveOrder{ // emplace - constructs value in place (no temp obj needed unlike insert), doesn't overwrite (unlike operator[](key))
+            Side::Buy,      // side
+            px_ticks,       // price level
+            qty,            // remaining_qty
+            ts              // timestamp (for FIFO)
+        });
+
+        // Non-crossing: no trades to emit (out.trades stays empty)
+        return out;
+    }
+
+    return out; // order_id==0 means “not accepted” in this minimal step
 }
