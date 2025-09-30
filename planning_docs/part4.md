@@ -1,8 +1,8 @@
-# Order Book Test Scenarios
+## Order Book Test Scenarios
 
 ---
 
-## T1 — Non-crossing limit add updates top of book (no trades)
+### T1 — Non-crossing limit add updates top of book (no trades)
 
 **Given:**
 - empty book  
@@ -25,7 +25,7 @@
 
 ---
 
-## T2 — Crossing limit sell matches at maker prices (single level)
+### T2 — Crossing limit sell matches at maker prices (single level)
 
 **Given:** empty OrderBook  
 - `R1 = add_limit(buy, px=10, qty=5, ts=1)` → returned order_id = A  
@@ -44,7 +44,7 @@
 
 ---
 
-## T3 — Market buy walks multiple ask levels (FIFO + multiple trades)
+### T3 — Market buy walks multiple ask levels (FIFO + multiple trades)
 
 **Given:**
 - `add_limit(sell, 11, qty=2, ts=1) → id = S1`  
@@ -67,7 +67,7 @@
 
 ---
 
-## T4 — FIFO within a level (price–time priority)
+### T4 — FIFO within a level (price–time priority)
 
 **Given:**  
 - `add_limit(buy, 10×2, ts=1)`  
@@ -85,7 +85,7 @@
 
 ---
 
-## T5 — Cancel: non-existent vs terminal vs active
+### T5 — Cancel: non-existent vs terminal vs active
 
 **Given:**  
 - `id=A: add_limit(buy, 10×2, ts=1)` (active)  
@@ -102,7 +102,7 @@
 
 ---
 
-## T6 — Best-of-book consistency & no crossed book
+### T6 — Best-of-book consistency & no crossed book
 
 **Given:**  
 - `add_limit(buy, 9×5, ts=1)`  
@@ -119,7 +119,7 @@
 
 ---
 
-## T7 — Timestamp tie broken by arrival sequence
+### T7 — Timestamp tie broken by arrival sequence
 
 **Given:** two buys at px=10 with identical ts=100:  
 - `add_limit(buy, 10×1, ts=100)` // earlier arrival_seq  
@@ -136,7 +136,7 @@
 
 ---
 
-## T8 — Validation & overflow rejections
+### T8 — Validation & overflow rejections
 
 **Given:** empty book  
 
@@ -150,7 +150,7 @@
 
 ---
 
-## What you’ll need observable from the API
+### What you’ll need observable from the API
 
 - Return value of `add_limit` / `add_market`: the list of Trade plus the assigned order_id / taker_id.  
 - `best_bid()` / `best_ask()` returning null or `{px_ticks, agg_qty}`.  

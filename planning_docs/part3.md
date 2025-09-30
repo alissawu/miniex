@@ -1,6 +1,6 @@
 Module 1 — Part 3: Public interfaces (headers only)
 Goal: design types & method signatures that express our invariants and big-O goals. No implementation, no code dump — you propose; I critique.
-A. Value types (think: what data each record must carry)
+### A. Value types (think: what data each record must carry)
 Design the fields (names + types) for:
 1. Order
     - Must uniquely identify an order, its side, price (ticks), quantity, and arrival priority.
@@ -31,7 +31,7 @@ For each, write a bullet list of fields you’ll include and one sentence on why
 - qty (int32 > 0): trades involve quantities of stocks that must be kept track of
 - ts (uint64, monotonic): trade time, to determine recency?
 
-B. OrderBook API (verbs an external user calls)
+### B. OrderBook API (verbs an external user calls)
 Propose method names + inputs + outputs (no bodies). Use our earlier decisions:
 - add_limit(...)
 add_limit(order_id, side, px_ticks, qty, ts, owner_id) -> list of Trade 
@@ -63,7 +63,7 @@ best_bid() -> optional<{px_ticks, agg_qty}>
 For each method, add a one-line postcondition tied to your invariants. Example style (don’t copy):
 “After add_market, there are no crossed prices; all zero-qty orders removed.”
 
-C. Edge-case policy (you decide)
+### C. Edge-case policy (you decide)
 1. Validation on add_limit
 What do we do if qty ≤ 0 or px_ticks < 0? (reject? clamp? error code?)
 - Reject w clear status. clear box and show text underneath the input box when it is input (order qty can't be 0!) or something upon trying to submit
