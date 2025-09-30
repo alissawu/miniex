@@ -90,7 +90,7 @@ namespace {
      */
     struct BookState {
         std::map<int64_t, Level>             bids;          ///< Bid side: price -> Level (aggregate + FIFO)
-        std::map<int64_t, int64_t>           asks;          ///< Ask side: price -> aggregate (FIFO added in later DS step)
+        std::map<int64_t, Level>           asks;          ///< Ask side: price -> aggregate (FIFO added in later DS step)
         std::unordered_map<uint64_t, Handle> id_to_handle;  ///< O(1) jump to a resting order’s exact location
         uint64_t                             next_id = 1;   ///< Next engine-generated order id
     };
@@ -154,7 +154,7 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
 
             auto maker_it = level.queue.begin(); // starting at the best bid
             const uint64_t maker_id = maker_it->order_id;
-            // amt to fill
+            // amt that can fill
             const int64_t fill = std::min<int64_t>(remaining, maker_it->remaining_qty);
             // emit trade at the maker's (resting best bid) price
             out.trades.push_back(Trade{
@@ -178,6 +178,17 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
                 st.bids.erase(best_bid_it);
             }
         }
+        // if any sell doesn't cross, rest it on ask side (FIFO node + handle)
+        if (remaining > 0) {
+            auto [ask_level_it, inserted] = st.asks.try_emplace(px_ticks, Level{});
+            Level& ask_level = ask_level_it->second;
+            // push_back appends to end of container
+            ask_level.queue.push_back(OrderNode{ /*order_id=*/taker_id, /*remaining_qty=*/remaining, /*ts=*/ts });
+            auto order_it = std::prev(ask_level.queue.end());
+
+            ask_level.aggregate_qty += remaining;
+            st.id_to_handle.emplace(taker_id, Handle{ Side::Sell, ask_level_it, order_it });
+        }
     }
     return out;
 }
@@ -196,7 +207,8 @@ std::optional<TopOfBook> OrderBook::best_ask() const {
     const auto& st = S();
     if (st.asks.empty()) return std::nullopt;
     auto iter = st.asks.begin();                  // lowest price
-    return TopOfBook{iter->first, iter->second};
+    const Level& level = iter -> second;
+    return TopOfBook{iter->first, level.aggregate_qty};
 }
 // get level size, return 0 if missing
 int64_t OrderBook::depth_at(Side side, int64_t px_ticks) const {
@@ -207,14 +219,14 @@ int64_t OrderBook::depth_at(Side side, int64_t px_ticks) const {
         return it->second.aggregate_qty;
     } else {
         auto it = st.asks.find(px_ticks);
-        return (it == st.asks.end()) ? 0 : it->second;
+        return (it == st.asks.end()) ? 0 : it->second.aggregate_qty;
     }
 }
 
 
 AddMarketResult OrderBook::add_market(Side side, int64_t qty, uint64_t ts) {
     AddMarketResult out{0, {}};
-    if(qty<=0) return out; // reject; taker_id==0 signals invalid for now
+    if(qty<=0) return out; // reject
     auto& st = S();
     // give submission temp taker id for attribution in trades
     out.taker_order_id = st.next_id++;
