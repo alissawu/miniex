@@ -1,5 +1,5 @@
 # ignore build files
-build/CMakeFiles/** linguist-vendored
+build/** linguist-vendored
 
 # ignore everything in planning_docs/
 planning_docs/** linguist-vendored
