@@ -172,3 +172,46 @@ int64_t OrderBook::depth_at(Side side, int64_t px_ticks) const {
 }
 
 
+AddMarketResult OrderBook::add_market(Side side, int64_t qty, uint64_t ts) {
+    AddMarketResult out{0, {}};
+    if(qty<=0) return out; // reject; taker_id==0 signals invalid for now
+    auto& st = S();
+    // give submission temp taker id for attribution in trades
+    out.taker_order_id = st.next_id++;
+    int64_t remaining = qty;
+    if (side == Side::Buy) {
+        // from best (lowest price) outward
+        while (remaining > 0 && !st.asks.empty()) {
+            auto best_ask_it = st.asks.begin(); // lowest price
+            const int64_t level_px   = best_ask_it->first;
+            int64_t&      level_qty  = best_ask_it->second;
+
+            // Fill as much as possible at this level
+            const int64_t fill = (remaining < level_qty) ? remaining : level_qty;
+            
+            // Emit a trade at the maker's price (ask level price).
+            // NOTE: we don't yet have real maker order_ids for asks (no per-order queue implemented),
+            // so we set maker_order_id = 0 as a placeholder for T3.
+            out.trades.push_back(Trade{
+                0,/*maker_order_id=*/
+                out.taker_order_id,/*taker_order_id=*/
+                level_px,/*px_ticks=*/
+                fill,/*qty=*/
+                ts/*ts=*/
+            });
+            // apply the fill to the level and the taker
+            level_qty  -= fill;
+            remaining  -= fill;
+            // if level empty then erase
+            if (level_qty == 0) {
+                st.asks.erase(best_ask_it);
+            }
+        }
+        // market orders never rest, any leftover remaining (ie: other side ran out) goes unfilled
+        return out;
+
+    } else /*MARKET SELL*/ {
+        // TBD
+    }
+
+}
