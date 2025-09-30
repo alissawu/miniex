@@ -210,8 +210,29 @@ AddMarketResult OrderBook::add_market(Side side, int64_t qty, uint64_t ts) {
         // market orders never rest, any leftover remaining (ie: other side ran out) goes unfilled
         return out;
 
-    } else /*MARKET SELL*/ {
-        // TBD
+    } else {
+        // Side::Sell: walk bids from best (highest price) outward
+        while (remaining > 0 && !st.bids.empty()) {
+            auto best_bid_it = std::prev(st.bids.end()); // highest price
+            const int64_t level_px  = best_bid_it->first;
+            int64_t&      level_qty = best_bid_it->second;
+
+            const int64_t fill = (remaining < level_qty) ? remaining : level_qty;
+
+            out.trades.push_back(Trade{
+                0,/*maker_order_id=*/                 // placeholder until per-order FIFO exists
+                out.taker_order_id,/*taker_order_id=*/
+                level_px, /*px_ticks=*/           
+                fill,/*qty=*/
+                ts/*ts=*/
+            });
+
+            level_qty -= fill;
+            remaining -= fill;
+
+            if (level_qty == 0) st.bids.erase(best_bid_it);
+        }
+        return out;
     }
 
 }
