@@ -2,6 +2,7 @@
 // T1: support non-crossing buy insert, cancel, best_bid/ask, depth_at
 #include "OrderBook.hpp"   // btw these are manually typed comments
 #include <map>             // ordered price -> agg_qty
+#include <list>
 #include <unordered_map>   // id -> ActiveOrder
 #include <optional>
 
@@ -16,14 +17,33 @@ namespace {
         uint64_t ts;               // needed for FIFO
     };
 
+    // One resting order at a price level
+    struct OrderNode {
+        uint64_t order_id;
+        int64_t remaining_qty;
+        uint64_t ts; 
+    };
+    // Price level: aggregate, FIFO queue of OrderNode
+    struct Level {
+        int64_t aggregate_qty = 0;
+        // minimal FIFO container; std::list gives stable iterators and O(1) erase at iterator
+        std::list<OrderNode> queue;
+    };
+    // handle for O(1) cancel. holds "exact address" of an order
+    struct Handle {
+        Side side;
+        // iterator to price level in map
+        std::map<int64_t, Level>::iterator level_it;
+        // iterator to order node in price level's queue
+        std::list<OrderNode>::iterator order_it;
+    };
+
     // BookState is the whole book, prices are keys inside bids/asks maps
     struct BookState {
-        std::map<int64_t, int64_t>                 bids;        // price → aggregate qty
-        std::map<int64_t, int64_t>                 asks;        // these hold the aggregates per side
-        // map order id -> active order
-        std::unordered_map<uint64_t, ActiveOrder>  id_to_order; 
-        // each time we accept new resting order, we hand out fresh order_id and increment
-        uint64_t next_id = 1; // engine-generated IDs
+        std::map<int64_t, Level>                bids;        // price -> Level (aggregate + FIFO)
+        std::map<int64_t, int64_t>              asks;        // price -> aggregate
+        std::unordered_map<uint64_t, Handle>    id_to_handle; // id_to_handle, jump straight to the node for O(1) cancel
+        uint64_t next_id = 1; // engine-generated IDs. next_id +=1
     };
     // if we returned by value, we'd get a copy each time, edits don't persist
     // returning reference gives direct access. we mutate the real state
@@ -38,10 +58,17 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
     if (qty <= 0 || px_ticks < 0) return out; // invalid trades
     auto& st = S(); // Access the single BookState (internal memory)
 
-    // T1 - non-crossing BUY inserts
+    // T1 + DS - non-crossing BUY insert -> create node in a Level
     if (side == Side::Buy) {
         const uint64_t id = st.next_id++;  //engine generated ID
         out.order_id = id;
+        // Performs single lookup/insert in O(log L)
+        // If p_ticks exists: returns an iterator to existing price->Level pair, sets inserted = false
+        // if not: constructs new Level{} at that key, returns iterator to it, sets inserted=true
+        auto [level_it, inserted] = st.bids.try_emplace(px_ticks, Level{});
+        Level& level = level_it -> second
+
+
         // Update the aggregate at this bid price
         st.bids[px_ticks] += qty;
         // Record the order so cancel() can find & remove it later

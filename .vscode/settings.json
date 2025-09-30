@@ -1,7 +1,7 @@
 {
     "files.associations": {
-        "*.hpp": "cpp",
         "*.ejs": "html",
+        "*.hpp": "cpp",
         "iostream": "cpp",
         "__bit_reference": "cpp",
         "__split_buffer": "cpp",
@@ -49,7 +49,9 @@
         "string_view": "cpp",
         "unordered_map": "cpp",
         "algorithm": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "__tree": "cpp",
+        "list": "cpp"
     },
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }
