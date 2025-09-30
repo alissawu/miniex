@@ -193,6 +193,40 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
     return out;
 }
 
+
+bool OrderBook::cancel(uint64_t order_id) {
+    auto& st = S();
+    // Look up order_id in id_to_handle; if missing -> false
+    auto hit = st.id_to_handle.find(order_id);
+    if (hit == st.id_to_handle.end()) return false;
+    
+    const Handle h = hit->second; // second references the level
+    if(h.side == Side::Buy){
+        Level& level = h.level_it->second;
+        // subtract remaining qty from aggregate
+        const int64_t removed = h.order_it->remaining_qty;
+        level.aggregate_qty -= removed;
+        // erase order node in O(1)
+        level.queue.erase(h.order_it);
+        // if level empty, erase price level
+        if(level.aggregate_qty == 0){
+            st.bids.erase(h.level_it);
+        }
+        // remove handle 
+        st.id_to_handle.erase(hit);
+        return true; 
+    } else {
+        Level& level = h.level_it->second;
+        const int64_t removed = h.order_it->remaining_qty;
+        level.aggregate_qty -= removed;
+        level.queue.erase(h.order_it);
+        if(level.aggregate_qty == 0){
+            st.asks.erase(h.level_it);
+        }
+    }
+    return true;
+}
+
 // fn is member of OrderBook, might return TopofBook or null. const function doesn't modify object
 std::optional<TopOfBook> OrderBook::best_bid() const {
     const auto& st = S();                       // auto = deduce the type
@@ -236,14 +270,16 @@ AddMarketResult OrderBook::add_market(Side side, int64_t qty, uint64_t ts) {
         while (remaining > 0 && !st.asks.empty()) {
             auto best_ask_it = st.asks.begin(); // lowest price
             const int64_t level_px   = best_ask_it->first;
-            int64_t&      level_qty  = best_ask_it->second;
+            Level&        level  = best_ask_it->second;
 
-            // Fill as much as possible at this level
-            const int64_t fill = (remaining < level_qty) ? remaining : level_qty;
-            
-            // Emit a trade at the maker's price (ask level price).
-            // NOTE: we don't yet have real maker order_ids for asks (no per-order queue implemented),
-            // so we set maker_order_id = 0 as a placeholder for T3.
+            // FIFO maker = front of the ask queue
+            auto maker_it  = level.queue.begin();
+            uint64_t maker_id = maker_it->order_id;
+
+            // fill as much as possible at this level
+            const int64_t fill = std::min(remaining, level.aggregate_qty);
+
+            // emit a trade at the maker's price (ask level price)
             out.trades.push_back(Trade{
                 0,/*maker_order_id=*/
                 out.taker_order_id,/*taker_order_id=*/
@@ -251,11 +287,18 @@ AddMarketResult OrderBook::add_market(Side side, int64_t qty, uint64_t ts) {
                 fill,/*qty=*/
                 ts/*ts=*/
             });
-            // apply the fill to the level and the taker
-            level_qty  -= fill;
-            remaining  -= fill;
+            // apply fill to remaining and level
+            maker_it->remaining_qty -= fill; // maker_it points at the FIFO front node, we subtract fill from remaining_qty, a field in the OrderNode
+            level.aggregate_qty     -= fill;
+            remaining               -= fill;
+            // if maker / order done, erase node + handle
+            if (maker_it->remaining_qty == 0) {
+                st.id_to_handle.erase(maker_id);
+                level.queue.erase(maker_it);
+            }
+
             // if level empty then erase
-            if (level_qty == 0) {
+            if (level.aggregate_qty == 0) {
                 st.asks.erase(best_ask_it);
             }
         }
@@ -267,22 +310,33 @@ AddMarketResult OrderBook::add_market(Side side, int64_t qty, uint64_t ts) {
         while (remaining > 0 && !st.bids.empty()) {
             auto best_bid_it = std::prev(st.bids.end()); // highest price
             const int64_t level_px  = best_bid_it->first;
-            int64_t&      level_qty = best_bid_it->second;
+            Level&        level = best_bid_it->second;
 
-            const int64_t fill = (remaining < level_qty) ? remaining : level_qty;
+            // FIFO maker = front of the ask queue. in both bid and ask we take the most recent, from the top
+            auto maker_it  = level.queue.begin();
+            uint64_t maker_id = maker_it->order_id;
 
+            const int64_t fill = std::min(remaining, level.aggregate_qty);
+            // emit a trade at the maker's price (bid level price)
             out.trades.push_back(Trade{
-                0,/*maker_order_id=*/                 // placeholder until per-order FIFO exists
+                0,/*maker_order_id=*/
                 out.taker_order_id,/*taker_order_id=*/
-                level_px, /*px_ticks=*/           
+                level_px,/*px_ticks=*/
                 fill,/*qty=*/
                 ts/*ts=*/
             });
-
-            level_qty -= fill;
-            remaining -= fill;
-
-            if (level_qty == 0) st.bids.erase(best_bid_it);
+            // apply fill to remaining and level
+            maker_it->remaining_qty -= fill; 
+            level.aggregate_qty     -= fill;
+            remaining               -= fill;
+            // if maker / order done, erase node + handle
+            if (maker_it->remaining_qty == 0) {
+                st.id_to_handle.erase(maker_id);
+                level.queue.erase(maker_it);
+            }
+            if (level.aggregate_qty == 0){
+                st.bids.erase(best_bid_it);
+            }
         }
         return out;
     }
