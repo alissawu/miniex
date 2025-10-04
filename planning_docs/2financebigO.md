@@ -1,127 +1,55 @@
-Part 1 Notes:
+Part 2 Notes:
 
-### Vocab:
-side: buy (bid), sell (ask)  
-tick: smallest price increment.  
-for this proj will store price as an int number of ticks for simplicity  
-price level: all orders on one side at one identical price  
-limit order: buy/sell at this price or better. fill what's available at the price threshold.  
-market order: buy/sell now  
-price-time priority: at a price level, earlier orders fill before later ones (FIFO)  
-best bid/best ask: highest bid/lowest ask  
-spread = ask - bid  
-cross happens if buy price ≥ best ask OR sell price ≤ best bid  
-- immediate trading  
+### O-Notatation Targets
+A. Side index (price -> level)
+Ordered associative container keyed by price
+std::map<int, Level> RB-tree
+O(log L) lookup/insert/erase; O(1) access to min(asks) via begin() and max(bids) via std::prev(end()).
+so top of book is O(1)
 
-EXERCISES:  
+B. Per level FIFO (orders at one price)
+double linked list
+has O(1) pushback / arrivals, O(1) pop-front fills, O(1) erase at iterator (cancel an order), stable iterators (so handles don't break)
+(cache locality - prob switch to intrusive list later)
 
-### Thought exercise A — simulate by hand
-You have an empty book. Tick = 1. Process these events in order. Don’t do any fancy math—just keep track of levels and FIFO.  
-add buy id=1 px=10 qty=5 ts=1  
-add buy id=2 px=9 qty=4 ts=2  
-add sell id=3 px=11 qty=2 ts=3  
-add sell id=4 px=10 qty=3 ts=4 ← does this cross? if so, who trades with whom, at what price, and what quantities remain in the book afterward?  
+C. ID index (order id -> handle)
+unordered_map<order_id, Handle>
+O(1) lookup by id to cancel/inspect
+handle: 
+- side: bid or ask, know what tree to touch
+- price-node iterator: reference to the level in the side index
+- order-node iterator: reference to the node in that level's linked list
+lets us jump directly to the node to erase without searching
 
-Your task:  
-After each step, state: best bid, best ask.  
-On step 4, list the trades (taker id, maker id, price, qty) and the remaining quantities at each level.  
+D. Level metadata (what is in a level)
+aggregate_qty at that price (fast check for emptiness / depth queries)
+list of orders (FIFO)
+anything else for later, like arrival counters and stuff
 
-Work:  
-syntax: event #id qty@price  
+E. Best of book in O(1)
+Cached iterators: keep best_bid_it / best_ask_it updated on inserts/erases
 
-Step 1: add buy #1 @10x5  
-best bid = 10, best ask = none  
+### Define Handle and Level
+Define your Handle and Level on paper (bullet list, not code):
+- Handle fields — list the exact fields you will store for O(1) cancel.
+- Name the side field and why you need it.
+- Name the two “iterators/pointers” you’ll hold (to what, exactly?).
+- Level fields — list the minimal state per price level.
+- What aggregate(s) do you keep and why?
+- What container holds the orders, and what properties does it guarantee you?
+- Top-of-book policy — which of the two strategies will you use for O(1) best bid/ask (map extremes or cached iters), and why?
 
-Step 2: add buy #2 @9x4  
-best bid = 10, best ask = none  
+Handle fields:
+To cancel an order in O(1), we need to know what side it's on, which price level node it lives in, and which order node in that level.
+- side: bid | ask
+- price-level iterator: iterator/pointer to the price level node inside the side's ordered index (interator into map<int, Level>)
+- order iterator: iterator/pointer to the order node inside that level's FIFO list (node in a linked list)
 
-Step 3: add sell #3 @11x2  
-best bid = 10, best ask = 11  
-
-Step 4: add sell #4 @10x3  
-best bid = 10, best ask = 10  
-Creates a cross - because sell_px(10) ≤ best_bid(10)  
-Taker: order #4 (incoming). Maker: order #1 (resting)  
-Trade price: maker's price = 10  
-Fill: 3 out of #1's 4 -> #1 remains 2  
-
-Post trade book:  
-bids: #1 @10x2, #2 @9x4  
-asks: #3 @11x2  
-best bid = 10, best ask = 11  
-
----
-
-### Thought exercise B — operations we must support (you propose
-Based on the vocabulary, list the minimum operations your order-book must implement to behave like the simulation above. Think in verbs. (e.g., “add ___”, “cancel ___”, “query ___”, etc.)
-Answer:
-- add_limit (side: buy/sell, id, px, qty, ts)
-    - inserts limit order, if crosses, matching happens internally, call returns list of trades
-    - remaining qty rests in the book.
-- add_market (side, qty, ts)
-    - consumes opposite side at best available prices until qty is done or book empties
-    - returns Trades
-- cancel(id) -> bool
-    - removes active order w that id if it exists, returns success or failure
-- best_bid() / best_ask() (or top_of_book())
-    - read-only queries for current top prices, maybe sizes
-key idea: fills and removals aren't api calls, they're effects of these 4 operations, 
-API shld return trade records so caller can observe what happened.
-
-### Thought exercise C — invariants you will enforce
-Without naming data structures yet, write 3–5 invariants your implementation will always maintain (examples to get you thinking, not to copy: “asks sorted ascending by price,” “within a level, order order = arrival order,” …).
-invariant: a fact that must be true after every operation. safety rules that never break.
-should be checkable from outside
-Answer:
-1. Within a price level, arrival order must determine execution order (FIFO)
-2. Every active order id must be unique
-3. If best_ask and best_bid both exist, best_bid < best_ask
-    - best_bid: highest amount someone wants to buy for
-    - best_ask: lowest amount someone wants to sell for
-    - bid must be lower than ask, otherwise trade will happen
-4. Empty orders (qty=0) must be removed immediately. Price level w/qty=0 don't exist. (prevent ghost state)
-5. Each trade prints at the maker's price (price of resting / prev order it matched)
-    - gives concrete check on emitted trades
-6. All quantities are positive integers; prices are integer ticks.
-7. Bids are ordered descending by price; Asks are ascending 
-    - Allows testing that top-of-book equals extreme present on both sides
-
-### Thought exercise D - complexity targets
-Let’s set goals before picking data structures. Use:
-M = number of active orders,
-L = number of active price levels,
-k = number of levels touched in an operation,
-t = number of trades emitted.
-Propose target time complexities (Big-O) for each, and justify briefly:
-add_limit (non-crossing)
-add_limit (crossing)
-add_market(qty)
-cancel(id)
-best_bid() / best_ask()
-Hints to guide your thinking (not answers):
-Getting the extreme price on a side should be very cheap.
-Any operation that consumes k levels / emits t trades can’t be cheaper than Ω(k) / Ω(t).
-Fast cancel(id) usually implies you kept a direct handle somewhere.
-Write your targets + one-line rationale for each. Then we’ll choose concrete data structures that can actually hit those targets.
-1. add_limit (non-crossing)
-    - O(logL) + O(1)
-        - locate/create the price level (need ordered index by price + balanced tree lookup = O(logL))
-        - append to FIFO is O(1)
-2. add_limit (crossing)
-    - O(logL) + O(k+t)
-    - O(log L) to place/find the levels, then we consume k levels and emit t trades
-3. add_market(qty)
-    - O(k+t)
-    - Market order walks best-price outward, touching k levels and emitting t trades
-    - Always start at the extreme, which we can read in O(1)
-4. cancel(id)
-    - O(1) 
-    - need direct handle from id -> side, price level handle, order handle to erase w/o search
-    - per-level container must support O(1) erase at iterator and preserve FIFO (linked list?)
-5. best_bid() / best_ask()
-    - O(1) 
-    - either maintain pointer to extreme, or ordered map whose begin()/rbegin() is O(1) to min/max price
-Design implications:
-- side index (price->level): A balanced tree / skip list / ordered map for O(log L) lookups and O(1) extreme access
-- Per-level queue: FIFO with O(1) push-back, O(1) pop-front, O(1) erase at iterator for cancels -> linked list
-- ID index: hashmap from order_id to a handle to make cancel O(1)
+Level fields:
+- The minimal state per price level should have at least one order in it, otherwise it shouldn't exist. It holds orders at a price and supports FIFO / O(1) cancel
+- Aggregates we keep - the qty per price level, so we know when to erase / move to next level
+- orders (linked list of ordered nodes): FIFO queue w O(1) push/pop and O(1) erase at iterator - enforces price-time priority and allows O(1) cancel
+- Top of book policy, best bid/ask in O(1):
+Use map extremes
+O(1) on std::map, needs no extra state
+aka stored in begin() and prev(end()), still O(1)

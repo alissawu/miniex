@@ -196,7 +196,7 @@ AddLimitResult OrderBook::add_limit(Side side, int64_t px_ticks, int64_t qty, ui
 
 bool OrderBook::cancel(uint64_t order_id) {
     auto& st = S();
-    // Look up order_id in id_to_handle; if missing -> false
+    // look up order_id in id_to_handle; if missing -> false
     auto hit = st.id_to_handle.find(order_id);
     if (hit == st.id_to_handle.end()) return false;
     
